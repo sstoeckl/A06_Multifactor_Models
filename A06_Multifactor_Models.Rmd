@@ -1,0 +1,51 @@
+---
+title: "Portfoliomanagement and Financial Analysis - Assignment 6"
+subtitle: "Submit until Monday 2020-11-02, 13:00"
+author: "Lastname, Surname"
+output: html_notebook
+---
+  
+```{r setup}
+#remotes::install_github("braverock/FactorAnalytics",  build_vignettes = TRUE, force = TRUE)
+pacman::p_load(tidyverse,tidyquant,FFdownload,FactorAnalytics,PerformanceAnalytics)
+```
+
+**Please** remember to put your assignment solutions in `rmd` format using **many** chunks and putting readable text in between, similar to my examples given in Research Methods and Assignment 1!
+
+For all exercises: Please use the Assignment-Forum to post your questions, I will try my best to help you along! If you follow the vignettes from `factorAnalytics`, wherever it says `z.score=T`, please exchange it for either `z.score='crossSection'` or `z.score='timeSeries'` depending on the task at hand.
+
+## Exercise 1: Estimating the CAPM (from A05)
+
+In this exercise we want to estimate the CAPM. Please read carefully through the two documents provided (right hand side: files). Then we start to collect the necessary data:
+  
+a) From Datastream get the last 10 years of data from the 100 stocks of the S&P100 using the list `LS&P100I` (S&P 100): total return index (RI) and market cap (MV)
+b) Further import the Fama-French-Factors from Kenneth Frenchs homepage (monthly, e.g. using `FFdownload`). From both datasets we select data for the last (available) 60 months, calculate returns (simple percentage) for the US-Stocks and eliminate those stocks that have NAs for this period.
+c) Now subtract the risk-free rate from all the stocks. Then estimate each stocks beta with the market: Regress all stock excess returns on the market excess return and save all betas (optimally use `mutate` and `map` in combination with `lm`). Estimate the mean-return for each stock and plot the return/beta-combinations. Create the security market line and include it in the plot! What do you find?
+d) In a next step (following both documents), we sort the stocks according to their beta and build ten value-weighted portfolios (with more or less the same number of stocks). Repeat a) for the ten portfolios. What do you observe?
+e) In the third step you follow page 6-8 of the second document and estimate the second-pass regression with the market and then market & idiosyncratic risk. What do you observe? Present all your results in a similar fashion as in the document.
+
+## Exercise 2: Calculating and checking the CAPM cont. (from A05)
+
+As we have seen: the CAPM for small portfolios does not work very well, and so we start using portfolios that get rid of the idiosyncratic risk!
+Go to Kenneth French's Homepage  again and download the following datasets: "Portfolios Formed on Market Beta" (where we will use 10 monthly value weighted portfolios formed on beta) and "25 Portfolios Formed on Size and Market Beta" (same thing) as well as the market factor and rf (as before). Now we are going to check the CAPM like famous researchers have done it!
+We can use returns as they are in the files (simple returns)!
+
+a)	Subtract the risk-free rate from the first set of 10 portfolios (only sorted on beta) (Lo 10,., Hi 10) and estimate each stocks beta with the market. Estimate the mean-return for each stock and plot the return/beta-combinations. Create the security market line and include it in the plot! What do you find? (You can split the file in 2-3 different time blocks and see if something changes). * Now we are done with the first-pass regression.*
+b)	In the second-pass regression we now regress the average stock returns on the betas estimated before. What do you find in the coefficients and does this contradict the CAPM? Try different time periods again and see what you find. (all of the interpretations are in BKM pp.416f). 
+c)	Now do the extended second pass regression (regress on betas and residual-sds that you can extract from the regression) and see what you find for different periods. Interpret according to concept check 13.2. One of the (many) problems of the CAPM can be the correlation between residual variances and betas. Calculate and interpret.
+d)	Try again with 25 portfolios sorted on size and beta. What do you find? Is that interesting? 
+
+
+**The purpose of the further assignments is less programming-related (you can copy most of the code), but to receive a positive grade I want you to dig into the referenced literature and be able to explain _everything_ that you do very detailed in the text and your presentation (what do you do, what is the result and how do you intepret the result). After doing this - given the data - you should be perfectly able to estimate/interpret any type of factor model.**
+  
+## Exercise 3: Statistical Factor Models
+
+Follow the file [sfmVignette.pdf](https://github.com/braverock/FactorAnalytics/blob/master/vignettes/sfmVignette.pdf) and interpret your results.
+
+## Exercise 4: Timeseries Factor Models
+
+Follow the file [tsfmVignette.pdf](https://github.com/braverock/FactorAnalytics/blob/master/vignettes/tsfmVignette.pdf) and interpret your results.
+
+## Exercise 5: Fundamental Factor Models
+
+Follow the file [ffmVignette.pdf](https://github.com/braverock/FactorAnalytics/blob/master/vignettes/ffmVignette.pdf) and interpret your results.
