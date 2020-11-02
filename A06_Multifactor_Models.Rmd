@@ -1,7 +1,7 @@
 ---
 title: "Portfoliomanagement and Financial Analysis - Assignment 6"
 subtitle: "Submit until Monday 2020-11-02, 13:00"
-author: "Lastname, Surname"
+author: "Sozzi, Maurizio"
 output: html_notebook
 ---
   
@@ -25,27 +25,1061 @@ d) In a next step (following both documents), we sort the stocks according to th
 e) In the third step you follow page 6-8 of the second document and estimate the second-pass regression with the market and then market & idiosyncratic risk. What do you observe? Present all your results in a similar fashion as in the document.
 
 ## Exercise 2: Calculating and checking the CAPM cont. (from A05)
+ffggggghhh
+```{r}
+pacman::p_load(tidyverse,tidyquant,FFdownload,PortfolioAnalytics,nloptr,readxl,quantmod,FFdownload,timetk, dplyr, xts)
+```
+
 
 As we have seen: the CAPM for small portfolios does not work very well, and so we start using portfolios that get rid of the idiosyncratic risk!
 Go to Kenneth French's Homepage  again and download the following datasets: "Portfolios Formed on Market Beta" (where we will use 10 monthly value weighted portfolios formed on beta) and "25 Portfolios Formed on Size and Market Beta" (same thing) as well as the market factor and rf (as before). Now we are going to check the CAPM like famous researchers have done it!
 We can use returns as they are in the files (simple returns)!
 
+
+```{r}
+inputlist<-c("F-F_Research_Data_Faktors_CSV.zip","Portfolios_Formed_on_BETA_CSV.zip")
+             
+#Now process only these files if they can be matched (download only)
+FFdownload(output_file = "FFdata.RData", inputlist = inputlist, exclude_daily=TRUE)
+
+load("FFdata.RData")
+portf_mkt_betatest<-(FFdownload$x_Portfolios_Formed_on_BETA$monthly$value_weighted_returns)
+
+portf_mkt_betatest
+
+```
+
+
+
+```{r}
+#Download the Portfolios from Kenneth French's Homepage
+portf_mkt_beta <- "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/Portfolios_Formed_on_BETA_CSV.zip"
+ portf_mkt_beta_csv <- "Portfolios_Formed_on_BETA.csv"
+ temp <- tempfile()
+download.file(portf_mkt_beta, temp, quiet = TRUE)
+portf_mkt_beta <- read_csv(unz(temp, portf_mkt_beta_csv), skip = 15, quote = "\",") %>%
+  dplyr::rename(date = "X1") %>%
+  mutate_at(vars(-date), as.numeric) %>%
+  mutate(date = rollback(ymd(parse_date_time(date, "%Y%m") + months(1))))%>%
+  filter(date >= first('1964-01-01') & date <= '2019-12-31')
+
+#Download the market factor and rf (Fama/French 3 Research Factors)
+mkt_factors <- "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_Factors_CSV.zip"
+ mkt_factors_csv <- "F-F_Research_Data_Factors.CSV"
+ temp <- tempfile()
+download.file(mkt_factors, temp, quiet = TRUE)
+mkt_factors <- read_csv(unz(temp, mkt_factors_csv), skip = 3, quote = "\",") %>%
+  dplyr::rename(date = X1) %>%
+  mutate_at(vars(-date), as.numeric) %>%
+  mutate(date = rollback(ymd(parse_date_time(date, "%Y%m") + months(1)))) %>%
+  filter(date >= first('1964-01-01') & date <= '2019-12-31')
+
+
+```
+
+
 a)	Subtract the risk-free rate from the first set of 10 portfolios (only sorted on beta) (Lo 10,., Hi 10) and estimate each stocks beta with the market. Estimate the mean-return for each stock and plot the return/beta-combinations. Create the security market line and include it in the plot! What do you find? (You can split the file in 2-3 different time blocks and see if something changes). * Now we are done with the first-pass regression.*
+
+
+Subtract the risk-free rate from the first set of 10 portfolios (only sorted on beta) (Lo 10,., Hi 10) and estimate each stocks beta with the market.
+
+```{r}
+#join data
+ten_portf <- portf_mkt_beta[1:672, -c(2:6)]
+ten_portf_joined <- left_join(mkt_factors, ten_portf)
+
+mkt_factors
+ten_portf
+ten_portf_joined
+
+```
+```{r, echo=FALSE}
+ten_portf_joined <- ten_portf_joined <- ten_portf_joined%>% dplyr::rename("Lo10" = "Lo 10") %>% dplyr::rename("Dec2" = "Dec 2") %>% dplyr::rename("Dec3" = "Dec 3") %>% dplyr::rename("Dec4" = "Dec 4") %>% dplyr::rename("Dec5" = "Dec 5") %>% dplyr::rename("Dec6" = "Dec 6") %>% dplyr::rename("Dec7" = "Dec 7") %>% dplyr::rename("Dec8" = "Dec 8") %>% dplyr::rename("Dec9" = "Dec 9") %>% dplyr::rename("Hi10" = "Hi 10")
+
+view(ten_portf_joined)
+ten_portf_joined
+
+```
+
+```{r}
+#substract Risk-Free-Rate
+ten_portf_rf <- mutate(ten_portf_joined, Lo10rf = Lo10 - RF, Dec2rf = Dec2 - RF, Dec3rf = Dec3 - RF, Dec4rf = Dec4 - RF, Dec5rf = Dec5 -RF, Dec6rf = Dec6 - RF, Dec7rf = Dec7 - RF, Dec8rf = Dec8 - RF, De9rf = Dec9 - RF, Hi10rf = Hi10 - RF)
+ten_portf_rf <- ten_portf_rf[-2:-15]
+
+view(ten_portf_rf)
+ten_portf_rf
+```
+
+```{r, echo=FALSE}
+#Create XTS
+mkt_factors_xts <- tk_xts(data = mkt_factors, date_var = date)
+ten_portf_rf_xts <- ten_portf_rf %>%
+  tk_xts(date_var = date, silent = TRUE)
+
+```
+```{r}
+?lm()
+#Calculate Betas for each portfolio
+betas_ten_portf_lm <- lm(ten_portf_rf_xts ~ mkt_factors_xts[, 1])
+betas_ten_portf_lm
+betas_ten_portf <- CAPM.beta(Ra = ten_portf_rf_xts, Rb = mkt_factors_xts[, 1], Rf = 0)
+betas_ten_portf
+```
+Estimate the mean-return for each stock and plot the return/beta-combinations.
+
+```{r}
+#Estimate Mean Return
+mean_ten_portf_rf_xts <- as.data.frame(lapply(ten_portf_rf_xts, FUN=mean))
+mean_ten_portf_rf_xts
+
+#Plot the return/beta-combinations
+plot.default(x = betas_ten_portf, xlim=c(0, 2),
+             y = mean_ten_portf_rf_xts, ylim=c(0, 1),
+             xlab = "Beta", ylab = "Mean Return",
+             main = "Return/Beta-combinations")
+```
+Create the security market line and include it in the plot! What do you find?
+
+```{r}
+mean_mkt <- as.data.frame(lapply(mkt_factors_xts[, 1], FUN=mean))
+y_mkt <- mean_mkt[1, 1]
+plot.default(x = betas_ten_portf, xlim=c(0, 2),
+             y = mean_ten_portf_rf_xts, ylim=c(0, 1),
+             xlab = "Beta", ylab = "Mean Return",
+             main = "Return/Beta-combinations",
+             abline(0, y_mkt))
+plot.default(x = betas_ten_portf, xlim=c(0, 2), 
+             y = mean_ten_portf_rf_xts, ylim=c(0, 10), 
+             xlab = "Beta", ylab = "Mean Return",
+             main = "Return/Beta-combinations",
+             abline(0, y_mkt))
+
+#summary
+summary_CAPM_ten_portf <- (table.CAPM(Ra = ten_portf_rf_xts, Rb = mkt_factors_xts[, 1], Rf = 0)[1:9, ])
+```
+(You can split the file in 2-3 different time blocks and see if something changes). * Now we are done with the first-pass regression.*
+
+```{r}
+#look for first 10 years
+ten_portf_rf_10yrs_xts <- ten_portf_rf[1:120, ] %>%
+  tk_xts(date_var = date, silent = TRUE)
+betas_ten_portf_rf_10yrs <- CAPM.beta(Ra = ten_portf_rf_10yrs_xts, Rb = mkt_factors_xts[1:120, 1], Rf = 0)
+mean_ten_portf_rf_10yrs_xts <- as.data.frame(lapply(ten_portf_rf_10yrs_xts, FUN=mean))
+mean_mkt_10yrs <- as.data.frame(lapply(mkt_factors_xts[1:120, 1], FUN=mean))
+y_mkt_10yrs <- mean_mkt_10yrs[1, 1]
+plot.default(x = betas_ten_portf_rf_10yrs, xlim=c(0, 2),
+             y = mean_ten_portf_rf_10yrs_xts, ylim=c(0, 1),
+             xlab = "Beta", ylab = "Mean Return",
+             main = "Return/Beta-combinations 1964-1974",
+             abline(0, y_mkt_10yrs))
+summary_CAPM_ten_portf_10yrs <- (table.CAPM(Ra = ten_portf_rf_xts[1:120, ], Rb = mkt_factors_xts[1:120, 1], Rf = 0)[1:9, ])
+summary_CAPM_ten_portf_10yrs
+```
+```{r, echo=FALSE}
+
+#look for 2000-2019
+ten_portf_rf_2000_xts <- ten_portf_rf[433:672, ] %>%
+  tk_xts(date_var = date, silent = TRUE)
+betas_ten_portf_rf_2000 <- CAPM.beta(Ra = ten_portf_rf_2000_xts, Rb = mkt_factors_xts[433:672, 1], Rf = 0)
+mean_ten_portf_rf_2000_xts <- lapply(ten_portf_rf_2000_xts, FUN=mean)
+mean_ten_portf_rf_2000_xts <- as.data.frame(mean_ten_portf_rf_2000_xts)
+mean_mkt_2000 <- lapply(mkt_factors_xts[433:672, 1], FUN=mean)
+mean_mkt_2000 <- as.data.frame(mean_mkt_2000)
+y_mkt_2000 <- mean_mkt_2000[1, 1]
+plot.default(x = betas_ten_portf_rf_2000, xlim=c(0, 2),
+             y = mean_ten_portf_rf_2000_xts, ylim=c(0, 1),
+             xlab = "Beta", ylab = "Mean Return",
+             main = "Return/Beta-combinations 2000-2019",
+             abline(0, y_mkt_2000))
+summary_CAPM_ten_portf_2000 <- (table.CAPM(Ra = ten_portf_rf_xts[433:672, ], Rb = mkt_factors_xts[433:672, 1], Rf = 0)[1:9, ])
+summary_CAPM_ten_portf_2000
+
+plot.default(x = betas_ten_portf, xlim=c(0, 2),
+             y = mean_ten_portf_rf_xts, ylim=c(0, 1),
+             xlab = "Beta", ylab = "Mean Return",
+             main = "Return/Beta-combinations 1964-2019",
+             abline(0, y_mkt))
+summary_CAPM_ten_portf
+
+
+```
+
+
 b)	In the second-pass regression we now regress the average stock returns on the betas estimated before. What do you find in the coefficients and does this contradict the CAPM? Try different time periods again and see what you find. (all of the interpretations are in BKM pp.416f). 
+
+
+```{r}
+betas_ten_portf
+mean_ten_portf_rf_xts
+```
+
+```{r}
+CAPM_Theroy<-betas_ten_portf/mean_ten_portf_rf_xts
+
+CAPM_Theroy
+```
+
+
+
+```{r}
+#There are a number of reasons we expect might the CAPM to fail:
+#1. Imperfect measures of the market portfolio
+#2. Beta is an incomplete measure of risk
+#3. Tax effects
+#4. Non - normality of returns
+#5. No riskless asset
+#6. Divergent borrowing and lending rates
+```
+
 c)	Now do the extended second pass regression (regress on betas and residual-sds that you can extract from the regression) and see what you find for different periods. Interpret according to concept check 13.2. One of the (many) problems of the CAPM can be the correlation between residual variances and betas. Calculate and interpret.
+
+```{r}
+#Look at a) -> We now do it with the mean return of every portfolio combined... 
+
+#1964-2019
+com_mean_ten_portf_rf <- sum(mean_ten_portf_rf_xts)/10
+mean_betas_ten_portf <- sum(betas_ten_portf)/10
+plot.default(x = mean_betas_ten_portf, xlim=c(0, 2),
+             y = com_mean_ten_portf_rf, ylim=c(0, 2),
+             xlab = "Beta", ylab = "Mean Return",
+             main = "Return/Beta-combinations 10 Portfolios 1964-2019",
+             abline(0, y_mkt))
+
+
+```
+
+```{r, echo=FALSE}
+
+#1964-1974
+com_mean_ten_portf_rf_10yrs <- sum(mean_ten_portf_rf_10yrs_xts)/10
+mean_betas_ten_portf_10yrs <- sum(betas_ten_portf_rf_10yrs)/10
+plot.default(x = mean_betas_ten_portf_10yrs, xlim=c(0, 2),
+             y = com_mean_ten_portf_rf_10yrs, ylim=c(0, 2),
+             xlab = "Beta", ylab = "Mean Return",
+             main = "Return/Beta-combinations 10 Portfolios 1964-1974",
+             abline(0, y_mkt_10yrs))
+
+#2000-2019
+com_mean_ten_portf_rf_2000 <- sum(mean_ten_portf_rf_2000_xts)/10
+mean_betas_ten_portf_2000 <- sum(betas_ten_portf_rf_2000)/10
+plot.default(x = mean_betas_ten_portf_2000, xlim=c(0, 2),
+             y = com_mean_ten_portf_rf_2000, ylim=c(0, 2),
+             xlab = "Beta", ylab = "Mean Return",
+             main = "Return/Beta-combinations 10 Portfolios 2000-2019",
+             abline(0, y_mkt_2000))
+
+```
+
+```{r, echo=FALSE}
+
+#SML-Function
+calc_residual <- function(x) {y <- y_mkt*x}
+calc_residual_10yrs <- function(x) {y <- y_mkt_10yrs*x}
+calc_residual_2000 <- function(x) {y <- y_mkt_2000*x}
+residual_1964_2019 <- as.data.frame((com_mean_ten_portf_rf - calc_residual(mean_betas_ten_portf))^2)
+residual_1964_1974 <- as.data.frame((com_mean_ten_portf_rf_10yrs - calc_residual_10yrs(mean_betas_ten_portf_10yrs))^2)
+residual_2000_2019 <- as.data.frame((com_mean_ten_portf_rf_2000 - calc_residual_2000(mean_betas_ten_portf_2000))^2)
+joined_residuals <- merge(residual_1964_2019[1, 1], residual_1964_1974[1, 1])
+joined_residuals <- merge(joined_residuals, residual_2000_2019)
+Residuals_different_timeperiods <- joined_residuals %>% 
+  dplyr::rename("Residual 2000-2019" = "(com_mean_ten_portf_rf_2000 - calc_residual_2000(mean_betas_ten_portf_2000))^2") %>% dplyr::rename("Residual 1964-2008" = "x") %>% dplyr::rename("Residual 1964-1974" = "y")
+Residuals_different_timeperiods
+```
+
+
 d)	Try again with 25 portfolios sorted on size and beta. What do you find? Is that interesting? 
 
+```{r}
+inputlist1<-c("F-F_Research_Data_Faktors_CSV.zip","25_Portfolios_Formed_on_Size_and Market_Beta_CSV.zip")
+             
+#Now process only these files if they can be matched (download only)
+FFdownload(output_file = "FFdata.RData", inputlist = inputlist1, exclude_daily=TRUE)
 
-**The purpose of the further assignments is less programming-related (you can copy most of the code), but to receive a positive grade I want you to dig into the referenced literature and be able to explain _everything_ that you do very detailed in the text and your presentation (what do you do, what is the result and how do you intepret the result). After doing this - given the data - you should be perfectly able to estimate/interpret any type of factor model.**
+load("FFdata.RData")
+twentyfive_portf<-(FFdownload$x_25_Portfolios_Formed_on_Size_and Market_Beta$monthly$value_weighted_returns)
+
+twentyfive_portf
+ 
+```
+
+
+```{r}
+twentyfive_portf
+```
+
+
+```{r}
+#join data
+twentyfive_portf <- portf_mkt_beta[1:672, -c(7:16)]
+twentyfive_portf_joined <- left_join(mkt_factors, twentyfive_portf)
+```
+
+```{r, echo=FALSE}
+
+twentyfive_portf_joined <- twentyfive_portf_joined <- twentyfive_portf_joined%>%
+  dplyr::rename("Lo20" = "Lo 20") %>%
+  dplyr::rename("Qnt2" = "Qnt 2") %>%
+  dplyr::rename("Qnt3" = "Qnt 3") %>%
+  dplyr::rename("Qnt4" = "Qnt 4") %>%
+  dplyr::rename("Hi20" = "Hi 20")
+````
+
+```{r}
+#substract Risk-Free-Rate
+twentyfive_portf_rf <- mutate(twentyfive_portf_joined, Lo20rf = Lo20 - RF, Qnt2rf = Qnt2 - RF, Qnt3rf = Qnt3 - RF, Qnt4rf = Qnt4 - RF, Hi20rf = Hi20 - RF)
+twentyfive_portf_rf <- twentyfive_portf_rf[-2:-10]
+
+```
+
+```{r, echo=FALSE}
+#substract Risk-Free-Rate
+twentyfive_portf_rf <- mutate(twentyfive_portf_joined, Lo20rf = Lo20 - RF, Qnt2rf = Qnt2 - RF, Qnt3rf = Qnt3 - RF, Qnt4rf = Qnt4 - RF, Hi20rf = Hi20 - RF)
+twentyfive_portf_rf <- twentyfive_portf_rf[-2:-10]
+
+
+#Create XTS
+twentyfive_portf_rf_xts <- twentyfive_portf_rf %>%
+  tk_xts(date_var = date, silent = TRUE)
+
+#Calculate Betas for each portfolio
+betas_twentyfive_portf <- CAPM.beta(Ra = twentyfive_portf_rf_xts, Rb = mkt_factors_xts[, 1], Rf = 0)
+
+#Estimate Mean Return
+mean_twentyfive_portf_rf_xts <- as.data.frame(lapply(twentyfive_portf_rf_xts, FUN=mean))
+
+#Plot the return/beta-combinations
+plot.default(x = betas_twentyfive_portf, xlim=c(0, 2),
+             y = mean_twentyfive_portf_rf_xts, ylim=c(0, 1),
+             xlab = "Beta", ylab = "Mean Return",
+             main = "Return/Beta-combinations 25",
+             abline(0, y_mkt))
+
+#We now do it with the mean return of every portfolio combined...
+com_mean_twentyfive_portf_rf <- sum(mean_twentyfive_portf_rf_xts)/5
+# and the beta
+mean_betas_twentyfive_portf <- sum(betas_twentyfive_portf)/5
+
+plot.default(x = mean_betas_ten_portf, xlim=c(0, 2),
+             y = com_mean_ten_portf_rf, ylim=c(0, 1),
+             xlab = "Beta", ylab = "Mean Return",
+             main = "Return/Beta-combinations Portfolio Summary 25",
+             abline(0, y_mkt))
+plot.default(x = mean_betas_ten_portf, xlim=c(0, 2),
+             y = com_mean_ten_portf_rf, ylim=c(0, 1),
+             xlab = "Beta", ylab = "Mean Return",
+             main = "Return/Beta-combinations Portfolio Summary 10",
+             abline(0, y_mkt))
+
+```
+
+
+
+
+
   
-## Exercise 3: Statistical Factor Models
+
+
+# Exercise 3: Statistical Factor Models
 
 Follow the file [sfmVignette.pdf](https://github.com/braverock/FactorAnalytics/blob/master/vignettes/sfmVignette.pdf) and interpret your results.
+
+```{r}
+SP500 <- tq_index("SP500")
+NASDAQ <- tq_exchange("NASDAQ")
+NYSE <- tq_exchange("NYSE") 
+stocks.selection <- SP500 %>% 
+  inner_join(rbind(NYSE,NASDAQ) %>% select(symbol,last.sale.price,market.cap,ipo.year),by=c("symbol")) %>%
+  filter(ipo.year<2000&!is.na(market.cap)) %>% 
+  arrange(desc(weight)) %>% 
+  slice(1:10)
+stocks.selection
+```
+
+These are the returns of the selected stocks.
+
+```{r}
+stocks.returns <- stocks.selection$symbol %>%
+    tq_get(get  = "stock.prices",
+           from = "2000-01-01",
+           to   = "2019-12-31") %>%
+    group_by(symbol) %>%
+    tq_transmute(select     = adjusted, 
+                 mutate_fun = periodReturn, 
+                 period     = "monthly")
+stocks.returns
+```
+
+These are the stocks return in the xts format and also in a wide format
+````{r}
+stocks.returns.xts <- stocks.returns%>%
+                      subset( select = c(symbol,date, monthly.returns)) %>%
+                      pivot_wider(names_from = symbol, 
+                                  values_from = monthly.returns) %>% 
+                      tk_xts(date_var = date, silent = TRUE)
+colnames(stocks.returns.xts)
+```
+
+### Fit a statistical factor model fitSfm
+
+Principal Component Analysis (PCA): uses the eigen decomposition of the covariance matrix of asset returns to find the first K principal components that explain the largest portion of the sample covariance matrix returns. Factor loading are then estimated using time series regression. Foctor analysis involves maximum likelihood optimization to estimate the factor loadings and the residual covarince matrix, constructing the factor realization and choosing a rotation of the coordinate system for a more meeaningful interpretion of factors
+
+used when T>N
+T: Number of observations
+N: Number of assets
+
+if N>T then Aymptotic Principal Component Analysis (APCA)
+
+#### Principal Component Analysis
+Fitting a statistical factor model with two principal components (k=2)
+```{r}
+fit.pca <- fitSfm(stocks.returns.xts, k=2)
+fit.pca 
+```
+Screenplot of eigenvalues
+An eigenvector of a linear transformation is a nonzero vector that changes by a scalar factor when that linear transformation is applied to it. Eigenvalues and eigenvectors allow us to "reduce" a linear operation to separate, simpler, problems.
+```{r}
+plot(fit.pca, which=1, eig.max = 0.9)
+
+```
+
+First principal component explains about 48% of total variance. The first two components explain about 61% of total variance.
+
+Now plotting the estimated factor returns
+```{r}
+plot(fit.pca, which=2)
+```
+
+Estimated factor loadings for all assets
+Factor loading is the correlation coefficient for the variable and factor.
+```{r}
+
+plot(fit.pca, which=3, a.sub=1:10)
+
+```
+First factor has all positive loadings, whereas the second factor has both positive and negative loadings.
+
+
+```{r}
+t(fit.pca$mimic)
+
+plot(fit.pca, which=12, n.top=3)
+```
+This figure displays the top three assets with the largest and smalles weights in each factor mimicking portfolio. For the first factor, NVIDA, Amazone and Adobe have the highest weights and Amgen, UPS and Microsoft have the lowest weights. Since all weights are positive this might be construed as a market-wide factor. For the second factor, Amazon, Qualcom and Cisco have the highest weights and NVIDA, Apple and Adobe have the lowest weights.
+
+Now plotting the correlations between assets with the top 3 largest and smallest positions in the F.1 factor mimicking portfolio
+
+```{r}
+plot(fit.pca, which=13, f.sub=1, n.top=3)
+```
+Here we can see the correlations between assets with top 3 largest and smallest weight in the factor mimicking portfolio for the first principal component. Correlations are very different.
+
+
+```{r}
+plot(fit.pca, which=13, f.sub=2, n.top=3)
+```
+Here we can see the correlations between assets with top 3 largest and smallest weight in the factor mimicking portfolio for the first principal component. Pretty high correlations overall.
+
+
+
+
+
+#### S3 generic methods
+all estimaded coefficients from PCA including intercept
+```{r}
+coef(fit.pca)
+```
+
+compare returns data with fitted and residual values for AAPL: fit.pca
+```{r}
+AAPL.ts <- merge(fit.pca$data[,1], fitted(fit.pca)[,1], residuals(fit.pca)[,1])
+
+colnames(AAPL.ts) <- c("AAPL.return", "AAPL.fitted", "AAPL.residual")
+
+tail(AAPL.ts)
+```
+
+fitted(): returns an xts data object of the component of asset returns explained by the factor model
+
+residuals(): returns xts data object with the component of asset returns not explained by the factor model
+
+Summary for fit.pca with HAC standard errors (allows for heteroskedasticity and autocorrelation consistent estimates and standard errors)
+```{r}
+sum.pca <- summary(fit.pca, se.type="HAC", n.top=3)
+
+sum.pca$sum.list[[1]]
+```
+factor mimicking portfolio weights
+```{r}
+sum.pca$mimic.sum
+```
+
+### Factor Model Covariance and Risk Decomposition
+
+#### Factor model covariance
+
+```{r}
+Omega <- fmCov(fit.pca)
+# return correlation plot for all assets
+plot(fit.pca, which=8, a.sub=1:10)
+```
+
+#### Standard deviation decomposition
+```{r}
+decomp <- fmSdDecomp(fit.pca)
+
+#get the factor model standard deviation for all assets
+decomp$Sd.fm
+
+#get the component contribution to Sd
+head(decomp$cSd)
+
+#plotting
+plot(fit.pca, which=9, f.sub=1:2, a.sub=1:10)
+```
+
+#### Value-at-Risk decomposition
+```{r}
+decomp1 <- fmVaRDecomp(fit.pca)
+
+#factor model Value-at-Risk
+head(decomp1$VaR.fm)
+
+#Marginal factor contributions to VAR
+head(decomp1$mVaR)
+
+# plotting
+plot(fit.pca, which=11, f.sub=1:2, a.sub=1:10)
+```
+
+
+####Expected Shorfall decomposition
+```{r}
+decomp2 <- fmEsDecomp(fit.pca)
+# factor model Expected Shortfall
+head(decomp2$ES.fm)
+
+# percentage component contribution to ES
+head(decomp2$pcES)
+
+# plotting
+plot(fit.pca, which = 10, f.sub=1:2, a.sub=1:10)
+```
+
+
+
+
 
 ## Exercise 4: Timeseries Factor Models
 
 Follow the file [tsfmVignette.pdf](https://github.com/braverock/FactorAnalytics/blob/master/vignettes/tsfmVignette.pdf) and interpret your results.
 
+### Theorie
+In a time series or macroeconomic factor model, observable economic time series such as industrial production growth rate, interest rates, market returns and inflation are used as common factors that contribute to asset returns. 
+- For example, the famous *single index model by Sharpe* (1964) uses the market excess return as the *common factor* (captures economy-wide or market risk) for all assets and the *unexplained returns in the error term* represents the *non-market firm specific risk*. 
+- On the other hand, *Chen et al. (1986) uses a multi-factor model* to find that surprise inflation, the spread between long and short-term interest rates and between high and low grade bonds are *significantly priced*, while the market portfolio, aggregate consumption risk and oil price risk are *not priced separately*.
+
+```{r}
+
+library(factorAnalytics)
+
+```
+
+
+```{r}
+
+# The following examples primarily use the managers dataset from the PerformanceAnalytics package. 
+# It’s an "xts" data object with:
+#                                 - 132 observations of monthly returns
+#                                 - on 10 variables:
+#                                     - six hypothetical asset managers, 
+#                                     - 1x dhec returns (Long-Short Equity hedge fund index)
+#                                     - 1x sp500 returns
+#                                     - US treasury bonds 10 years (will serve as explanatory factors)
+#                                     - US treasury bills 3 months (can be considered as the risk free rate)
+#                                 - there are some "not available" observations (start day!)
+
+data(managers)
+
+# We want to see the managers names
+colnames(managers)
+
+# and we want to see from when to when the data is available 
+first(managers)
+last(managers)
+
+```
+
+```{r}
+
+# the Ham1-Ham6 are the asset returns we want to explain --> y in our model
+asset.names <- colnames(managers[,1:6]) 
+
+# the edhec, sp500 & US Treasury they are the explanatory ones --> x in our model
+factor.names <- colnames(managers[,7:9]) 
+
+# Typically, factor models are fit using excess returns. If the asset and factor returns are not in excess return form, "rf.name" can be specified to convert returns into excess returns. 
+rf.name <- "US.3m.TR"
+
+# Similarly, market returns can be specified via "mkt.name" to add market-timing factors to the factor model.
+mkt.name <- "SP500.TR" 
+
+```
+
+### Let’s take a look at the arguments for *fitTsfm*.
+
+The default model fitting method is *LS regression* and the default variable selection method
+is "none" (that is, all factors are included in the model). 
+The different model fitting options are: 
+- least squares (LS), 
+- discounted least squares (DLS) and
+- robust regression fitting (Robust)
+
+
+And variableselection options are:
+- "stepwise", 
+- "subsets" and 
+- "lars"
+
+The default for rf.name and mkt.name are NULL. If rf.name is not specified by the user,
+perhaps because the data is already in excess return form, then no risk-free rate adjustment is
+made. Similarly, if mkt.name is not specified, market-timing factors are not added to the model.
+All other optional control parameters passed through the ellipsis are processed and assimilated
+internally by fitTsfm.control.
+
+```{r}
+
+# The series have unequal histories in this sample and “fitTsfm“ removes asset-wise incomplete cases (asset’s return data combined with respective factors’ return data) before fitting a factor model.
+args(fitTsfm)
+
+```
+
+```{r}
+
+# Single Index Model using SP500 
+fit.singleIndex <- fitTsfm(asset.names=asset.names, 
+                           factor.names="SP500.TR",   #specfic factor!
+                           rf.name="US.3m.TR", 
+                           data=managers)
+
+# fitted object from the time-series LS regression of asset returns on estimated factors.
+fit.singleIndex$asset.fit
+
+# specifics values
+fit.singleIndex$alfa
+fit.singleIndex$beta
+fit.singleIndex$r2
+fit.singleIndex$resid.sd
+
+# Interpretation:
+# if the market return rises 1%, then the return of Ham1 rises 0,39%
+# R-squared: 1 would be 100% - linear function matches perfectly with the data --> here we have low R-squared
+
+```
+
+```{r}
+
+class(fit.singleIndex)
+# time series factor model
+```
+
+```{r}
+
+names(fit.singleIndex)
+
+```
+
+Overview of the single factor linear fits for the assets. 
+```{r}
+
+fit.singleIndex
+# Interpretation:
+# How good does the single index model fits to the data?
+# Ham1 equals a linear regression the most --> fits the best --> R-squared is the highest
+# Ham5 does not really fit to this mode --> alfa and R-squared values
+
+```
+
+```{r}
+
+plot(fit.singleIndex, which=12, f.sub=1)
+
+```
+
+### Henriksson-Merton's - market timing models
+Market timing accounts for the price movement of the general stock market relative to fixed income securities.
+This includes the down.market factor --> max(0, Rf-Rm)
+To test market timing ability, this factor can be added to the single index model as shown below. The coefficient of this down-market factor can be
+interpreted as the number of "free" put options on the market provided by the manager’s markettimings kills. That is, a negative value for the regression estimate would imply a negative value for market timing ability of the manager.
+
+```{r}
+
+# Henriksson-Merton's market timing model
+fit.mktTiming <- fitTsfmMT(asset.names=asset.names, 
+                           mkt.name="SP500.TR", # specify which of the columns in data corresponds to the market returns using argument mkt.name.
+                           rf.name="US.3m.TR", 
+                           data=managers)
+
+t(fit.mktTiming$beta)
+
+# Interpretation:
+# when the value of down.market is negative, the ability of market timing of a manager is low --> not even there
+# so the manager 2 has the best ability of market timing and after that manager 6 --> they have the hightes intercept (which return they will make when the market makes no return)
+
+```
+
+
+```{r}
+
+fit.mktTiming$r2
+# Interpretation:
+# R^2 -> how good the data fits to the model
+
+```
+
+```{r}
+
+fit.mktTiming$resid.sd
+# Interpretation:
+# volatility: how much it jumps around relative to its relationship to an index(sp500)
+# risk: the higher the worse
+
+###fit methods
+#ls = least squares
+#dls = discounted least squares (weightes least squares)
+#robust = is good for data with outliers
+
+```
+
+Fits Model:
+
+The different model fitting options are: 
+- (ordinary) least squares (ols / LS) --> Default mode!
+- discounted least squares (DLS) and
+- robust regression fitting (Robust)
+
+### Ordinary least squares ("ols")
+
+```{r}
+#  The next example performs LS regression using all 3 available factors in the dataset.
+fit.ols <- fitTsfm(asset.names=asset.names, 
+                   factor.names=factor.names, # all 3 available factors: the edhec, sp500 & US.10Y.TR/US Treasury
+                   rf.name="US.3m.TR", 
+                   data=managers) 
+
+
+fit.ols$beta
+# Interpretation:
+# now we consider all factors (explanatory factors)
+
+# Sensitivity: 
+# when the return of edhec rises 1% --> Ham2 rises 0,1547%
+# when sp500 return rises 1%, Ham2 decreases by 0,195%
+# when US.10Y.TR return rises 1%, Ham2 decreases by 0,0504%
+```
+
+```{r}
+
+fit.ols$r2
+# Interpretation:
+# how good does the data fit to the model
+# Ham3 fits the best with 66%
+
+```
+
+```{r}
+
+fit.ols$resid.sd
+# Interpretation:
+# Volatility
+# How much they jump around --> most Ham4 0.0427
+```
+
+
+### Other options robust regression ("Robust"). 
+```{r}
+
+fit.robust <- fitTsfm(asset.names=asset.names, 
+                      factor.names=factor.names, 
+                      rf.name="US.3m.TR", 
+                      data=managers, 
+                      fit.method="Robust") # Method "Robust"!
+fit.robust$beta
+# Interpretation:
+
+```
+
+```{r}
+
+fit.robust$r2
+# Interpretation:
+# R-squared is now lower for each
+# maybe they all had outliers
+
+```
+
+
+```{r}
+
+fit.robust$resid.sd
+# Interpretation:
+
+```
+
+```{r}
+
+par(mfrow=c(2,1))
+plot(fit.ols, plot.single=TRUE, which=1, asset.name="HAM3")
+mtext("LS", side=3)
+plot(fit.robust, plot.single=TRUE, which=1, asset.name="HAM3")
+mtext("Robust", side=3)
+
+
+# Interpretation:
+# volatility is smaller when using the robust fitting method
+### variable selection
+
+# lars is a good variable to add
+# least angle regression
+# it is good when you are afraid of overfitting (that you adjust your model too much)
+# when you have high-dimensional data (lots of explanatory factors)
+
+```
+
+```{r}
+
+par(mfrow=c(1,2)) 
+plot(fit.ols, which=5, xlim=c(0,0.045), sub="LS") 
+plot(fit.robust, which=5, xlim=c(0,0.045), sub="Robust")
+
+```
+
+Though the R-squared values improved by adding more factors in fit.ols (compared to the single index model)
+
+### Variable Selection
+One might prefer to employ variable selection methods such as "stepwise", "subsets" or "lars" to avoid over-fitting. The method can be selected via the variable.selection argument. The default "none", uses all the factors and performs no variable selection.
+- Specifying *"stepwise"* selects traditional stepwise LS or robust regression using step or step.lmRob respectively. Starting from the given initial set of factors, factors are added (or subtracted) only if the regression fit improves.
+- Specifying *"subsets"* enables subsets selection using regsubsets. The best performing subset of any given size or within a range of subset sizes is chosen. Different methods such as exhaustive search (default), forward or backward stepwise, or sequential replacement can be employed.
+- Finally, *"lars"* corresponds to least angle regression using lars with variants "lasso" (default), "lar", "forward.stagewise" or "stepwise".
+
+#### LARS = least angle regression 
+
+```{r}
+
+fit.lars <- fitTsfm(asset.names=asset.names, 
+                    factor.names=factor.names, 
+                    data=managers, 
+                    rf.name="US.3m.TR", 
+                    variable.selection="lars") 
+
+fit.lars
+# Interpretation:
+# Subset --> the best performing subset within a range of subset sizes is chosen
+
+```
+
+```{r}
+
+fit.sub <- fitTsfm(asset.names=asset.names, 
+                   factor.names=factor.names, 
+                   data=managers, 
+                   rf.name="US.3m.TR", 
+                   variable.selection="subsets", 
+                   nvmin=2, nvmax=2) 
+
+fit.sub 
+# Here, the best subset of size 2 for each asset is chosen by specifying nvmin = nvmax = 2. Note that when nvmin < nvmax, the best subset is chosen from a range of subset sizes [nvmin, nvmax]. Default is nvmin = 1.
+
+# Interpretation:
+# we see all together
+# intercepts = alpha
+# where we see the indices --> betas
+
+```
+
+```{r}
+
+plot(fit.sub, which=2, f.sub=1:3)
+
+```
+
+```{r}
+
+plot(fit.lars, which=2, f.sub=1:3)
+
+```
+
+Comparing the *coefficients* and *R-squared values* from the two models, we find that the method that uses *more factors* for an asset have higher R-squared values as expected. However, when both "lars" and "subsets" chose the same number of factors, "lars" fits have a slightly higher R-squared values.
+
+
+###  S3 generic methods
+Many useful generic accessor functions are available for "tsfm" fit objects:
+- coef() returns a matrix of estimated model coefficients including the intercept. 
+- fitted() returns an xts data object of the component of asset returns explained by the factor model. 
+- residuals() returns an xts data object with the component of asset returns not explained by the factor model. 
+- predict() uses the fitted factor model to estimate asset returns given a set of new or simulated factor return data.
+- summary() prints standard errors and t-statistics for all estimated coefficients in addition to R-squared values and residual volatilities. 
+
+Argument se.type, one of "Default", "HC" or "HAC", allows for heteroskedasticity and auto-correlation consistent estimates and standard errors whenever possible. A "summary.tsfm" object is returned which contains a list of summary objects returned by "lm", "lm.Rob" or "lars" for each asset fit.
+
+```{r}
+
+methods(class="tsfm")
+
+```
+
+All estimated coefficients from the LS fit using all 3 factors
+```{r}
+
+coef(fit.ols)
+
+```
+
+Compare returns data with fitted and residual values for HAM1 from fit.lars
+
+```{r}
+
+HAM1.ts <- merge(fit.lars$data[,1], 
+                 fitted(fit.lars)[,1], 
+                 residuals(fit.lars)[,1]) 
+
+colnames(HAM1.ts) <- c("HAM1.return","HAM1.fitted","HAM1.residual") 
+
+tail(HAM1.ts)
+
+# Interpretation:
+# fitted --> the returns which can be explained through the model
+# residual --> the returns which cannot be explained through the model
+```
+
+### Summary for fit.sub computing HAC standard erros
+
+```{r}
+
+summary(fit.sub, se.type="HAC")
+
+```
+
+
+### Factor Model Covariance & Risk Decomposition
+
+#### Factor model covariance
+
+```{r}
+# the factor model covariance from a fitted factor model.
+fmCov(fit.sub)
+
+# factor model return correlation plot
+plot(fit.sub, which=8)
+```
+#### Standard deviation decomposition
+
+```{r}
+# fmSdDecomp performs a decomposition for all assets in the given factor model fit object
+decomp <- fmSdDecomp(fit.sub)
+names(decomp)
+
+# All Information together
+decomp
+
+# get:
+decomp$Sd.fm
+#     the factor model standard deviation for all assets
+decomp$cSd
+#     the component contributions to Sd
+decomp$mSd
+#     the marginal factor contributions to Sd
+decomp$pcSd
+#     the percentage component contributions to Sd
+
+# plot the percentage component contributions to Sd
+plot(fit.sub, which=9, f.sub=1:3)
+
+```
+
+
+#### Value-at-Risk decomposition
+
+VaR = The value at risk for a given probability level indicates the amount of loss that will not be exceeded within a given period of time with this probability
+
+```{r}
+
+decomp1 <- fmVaRDecomp(fit.sub)
+names(decomp1)
+
+# All Information together
+decomp1
+
+# get the factor model value-at-risk for all assets
+decomp1$VaR.fm
+
+# get the percentage component contributions to VaR
+decomp1$pcVaR
+
+# plot the percentage component contributions to VaR
+plot(fit.sub, which=11, f.sub=1:3)
+```
+
+#### Expected Shortfall decomposition
+
+The term risk measure is a collective term for statistical measures that can be used to quantitatively describe the uncertainty of an event.
+VaR is defined as the amount of loss that will not be exceeded in a given period of time with a specified probability p ("confidence level" α = 1 - p).
+
+```{r}
+
+decomp2 <- fmEsDecomp(fit.sub, method="historical")
+names(decomp2)
+
+# get the factor model expected shortfall for all assets
+decomp2$ES.fm
+
+# get the component contributions to Sd
+decomp2$cES
+
+# get the marginal factor contributions to ES
+decomp2$mES
+
+# get the percentage component contributions to ES
+decomp2$pcES
+
+# plot the percentage component contributions to ES
+plot(fit.sub, which=10, f.sub=1:3)
+```
+
+#### Plot
+
+
+#### Group Plots
+
+```{r}
+
+plot(fit.sub, which=6)
+# Make a plot selection (1-12 or 0 to exit)
+
+```
+
+#### Individual Plots
+
+```{r}
+
+plot(fit.sub, plot.single=TRUE, asset.name="HAM1", which=10)
+
+```
+```{r}
+
+plot(fit.sub, plot.single=TRUE, asset.name="HAM1", which=14)
+grid()
+
+```
+```{r}
+
+plot(fit.sub, plot.single=TRUE, asset.name="HAM1", which=11)
+
+```
+```{r}
+
+plot(fit.sub, plot.single=TRUE, asset.name="HAM1", which=12)
+
+```
 ## Exercise 5: Fundamental Factor Models
 
 Follow the file [ffmVignette.pdf](https://github.com/braverock/FactorAnalytics/blob/master/vignettes/ffmVignette.pdf) and interpret your results.
